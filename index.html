@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>DS Net Analytics</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#f4f5f7; --surface:#ffffff; --surface2:#f8f9fb; --line:#e6e8ec; --text:#14181f; --muted:#667085; --faint:#98a2b3;
+    --brand:#dc2626; --brand-soft:#fee2e2;
+    --demand:#dc2626; --supplier:#2563eb; --ok:#059669; --warn:#d97706; --bad:#dc2626;
+    --ok-soft:#d1fae5; --warn-soft:#fef3c7; --bad-soft:#fee2e2; --info-soft:#dbeafe;
+    --shadow:0 1px 2px rgba(16,24,40,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0f1115; --surface:#171a21; --surface2:#1d212a; --line:#2a2f3a; --text:#eef0f4; --muted:#9aa3b2; --faint:#6b7483;
+      --brand:#f05252; --brand-soft:#3b1717;
+      --demand:#f05252; --supplier:#5b9bff; --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+      --ok-soft:#10312a; --warn-soft:#3a2d0e; --bad-soft:#3b1717; --info-soft:#14284a;
+      --shadow:none;
+    }
+  }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:'Noto Sans Myanmar',system-ui,sans-serif; background:var(--bg); color:var(--text); font-size:14px; line-height:1.6; }
+  button, input, select { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  .wrap { max-width:1200px; margin:0 auto; padding:0 16px 48px; }
+
+  /* top bar */
+  .top { position:sticky; top:0; z-index:20; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  .top-in { max-width:1200px; margin:0 auto; padding:12px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .logo { width:38px; height:38px; border-radius:11px; background:var(--brand); color:#fff; display:grid; place-items:center; font-size:16px; flex:none; }
+  .ttl { flex:1; min-width:150px; }
+  .ttl h1 { font-size:16px; font-weight:700; line-height:1.3; }
+  .ttl p { font-size:11px; color:var(--muted); }
+  .actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .btn { border:1px solid var(--line); background:var(--surface); border-radius:10px; padding:7px 12px; font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:6px; box-shadow:var(--shadow); }
+  .btn:hover { background:var(--surface2); }
+  .btn.primary { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .btn.primary:hover { filter:brightness(.95); }
+  .btn:disabled { opacity:.6; cursor:default; }
+  .spin { animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .toggle { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer; user-select:none; }
+  .toggle input { accent-color:var(--brand); width:15px; height:15px; }
+  .menu { position:relative; }
+  .menu-list { position:absolute; right:0; top:calc(100% + 6px); min-width:190px; background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.15); padding:6px; display:none; z-index:30; }
+  .menu-list.open { display:block; }
+  .menu-list button { width:100%; text-align:left; background:none; border:0; padding:8px 10px; border-radius:8px; font-size:12px; font-weight:500; }
+  .menu-list button:hover { background:var(--surface2); }
+
+  /* banners */
+  .banner { margin-top:16px; padding:10px 14px; border-radius:12px; font-size:12px; display:none; }
+  .banner.err { display:block; background:var(--bad-soft); color:var(--bad); border:1px solid color-mix(in srgb, var(--bad) 30%, transparent); }
+  .alerts { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+  .alert { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:12px; font-size:12px; font-weight:600; }
+  .alert.warn { background:var(--warn-soft); color:var(--warn); }
+  .alert.bad { background:var(--bad-soft); color:var(--bad); }
+  .alert.ok { background:var(--ok-soft); color:var(--ok); }
+
+  /* kpis */
+  .kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-top:16px; }
+  .kpi { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:14px; box-shadow:var(--shadow); min-width:0; }
+  .kpi .lb { font-size:11px; color:var(--muted); font-weight:600; display:flex; align-items:center; gap:6px; }
+  .kpi .lb i { width:22px; height:22px; border-radius:7px; display:grid; place-items:center; font-size:11px; }
+  .kpi .v { font-size:26px; font-weight:700; line-height:1.2; margin-top:8px; font-variant-numeric:tabular-nums; }
+  .kpi .s { font-size:11px; color:var(--faint); margin-top:2px; }
+  .i-red { background:var(--bad-soft); color:var(--bad); } .i-blue { background:var(--info-soft); color:var(--supplier); }
+  .i-green { background:var(--ok-soft); color:var(--ok); } .i-amber { background:var(--warn-soft); color:var(--warn); }
+  .i-gray { background:var(--surface2); color:var(--muted); }
+
+  /* cards */
+  .grid { display:grid; gap:12px; margin-top:12px; }
+  .g-3-1 { grid-template-columns:2fr 1fr; } .g-2 { grid-template-columns:1fr 1fr; } .g-3 { grid-template-columns:repeat(3,1fr); }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow:var(--shadow); min-width:0; }
+  .card h2 { font-size:13px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .card h2 small { font-weight:500; color:var(--faint); font-size:11px; margin-left:auto; }
+  .note { font-size:11px; color:var(--faint); margin-top:8px; }
+  .chart-box { position:relative; height:250px; margin-top:12px; }
+  .chart-box.tall { height:320px; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; font-size:11px; color:var(--muted); }
+  .legend span::before { content:''; display:inline-block; width:9px; height:9px; border-radius:3px; background:var(--c); margin-right:6px; }
+
+  /* lists */
+  .rank { list-style:none; padding:0; margin-top:10px; }
+  .rank li { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12px; }
+  .rank li:last-child { border:0; }
+  .rank .n { width:22px; height:22px; border-radius:50%; background:var(--surface2); color:var(--muted); display:grid; place-items:center; font-size:11px; font-weight:700; flex:none; }
+  .rank li:nth-child(1) .n { background:var(--warn-soft); color:var(--warn); }
+  .rank .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .rank .nm small { display:block; font-weight:400; color:var(--faint); font-size:10px; }
+  .rank .val { font-weight:700; font-variant-numeric:tabular-nums; }
+  .empty { color:var(--faint); font-size:12px; padding:18px 0; text-align:center; }
+  .bar-row { margin-top:12px; }
+  .bar-row .t { display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; }
+  .bar-row .t b { font-variant-numeric:tabular-nums; }
+  .bar { height:8px; border-radius:99px; background:var(--surface2); overflow:hidden; }
+  .bar > i { display:block; height:100%; border-radius:99px; background:var(--ok); transition:width .5s; }
+
+  /* tables */
+  .tools { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:12px; }
+  .tabs { display:inline-flex; background:var(--surface2); border-radius:10px; padding:3px; gap:2px; }
+  .tabs button { border:0; background:none; padding:5px 12px; border-radius:8px; font-size:12px; font-weight:600; color:var(--muted); }
+  .tabs button.on { background:var(--surface); color:var(--text); box-shadow:var(--shadow); }
+  .search { flex:1; min-width:150px; max-width:280px; border:1px solid var(--line); background:var(--surface); border-radius:10px; padding:6px 10px; font-size:12px; outline:none; }
+  .search:focus { border-color:var(--brand); }
+  .tbl-wrap { overflow-x:auto; margin-top:10px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { text-align:left; color:var(--muted); font-weight:600; font-size:11px; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  td { padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  tbody tr:hover { background:var(--surface2); }
+  .pill { display:inline-block; padding:1px 9px; border-radius:99px; font-size:10px; font-weight:700; white-space:nowrap; }
+  .p-red { background:var(--bad-soft); color:var(--bad); } .p-blue { background:var(--info-soft); color:var(--supplier); }
+  .p-green { background:var(--ok-soft); color:var(--ok); } .p-amber { background:var(--warn-soft); color:var(--warn); }
+  .muted { color:var(--muted); } .nowrap { white-space:nowrap; }
+
+  /* skeleton */
+  .sk { background:linear-gradient(90deg,var(--surface2),var(--line),var(--surface2)); background-size:200% 100%; animation:sk 1.2s infinite; border-radius:8px; color:transparent !important; }
+  @keyframes sk { to { background-position:-200% 0; } }
+
+  /* ad manager */
+  .ad-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:12px; }
+  .lbl { display:block; font-size:11px; font-weight:600; color:var(--muted); margin:10px 0 4px; }
+  .inp { width:100%; border:1px solid var(--line); background:var(--surface); border-radius:10px; padding:8px 10px; font-size:12px; outline:none; }
+  .inp:focus { border-color:var(--brand); }
+  textarea.inp { resize:vertical; min-height:60px; }
+  .ad-prev { border:1px solid color-mix(in srgb, var(--brand) 25%, var(--line)); border-radius:16px; overflow:hidden; background:var(--surface); position:relative; max-width:424px; }
+  .ad-prev img { width:100%; height:96px; object-fit:cover; display:block; }
+  .ad-prev .ph { height:96px; display:grid; place-items:center; color:var(--faint); background:var(--surface2); font-size:12px; }
+  .ad-prev .tx { padding:8px 12px; } .ad-prev .tx b { font-size:12px; display:block; } .ad-prev .tx span { font-size:10px; color:var(--muted); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .ad-prev .tag { position:absolute; top:8px; right:8px; font-size:9px; font-weight:700; background:rgba(0,0,0,.55); color:#fff; padding:1px 8px; border-radius:99px; }
+  .setup { background:var(--warn-soft); color:var(--warn); border-radius:12px; padding:10px 12px; font-size:12px; margin-top:12px; display:none; }
+  .who { font-size:11px; color:var(--muted); max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  @media (max-width:1000px) { .ad-grid { grid-template-columns:1fr; } }
+  @media (max-width:1000px) { .kpis { grid-template-columns:repeat(3,1fr); } .g-3 { grid-template-columns:1fr; } .g-3-1,.g-2 { grid-template-columns:1fr; } }
+  @media (max-width:520px) { .kpis { grid-template-columns:repeat(2,1fr); } .kpi .v { font-size:22px; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-in">
+    <div class="logo"><i class="fa-solid fa-chart-line"></i></div>
+    <div class="ttl">
+      <h1>DS Net Analytics</h1>
+      <p id="updated">ဒေတာ ဆွဲယူနေပါသည်…</p>
+    </div>
+    <div class="actions">
+      <span class="who" id="whoAmI"></span>
+      <button class="btn" id="authBtn"><i class="fa-brands fa-google"></i> Admin Login</button>
+      <label class="toggle"><input type="checkbox" id="autoRefresh"> Auto refresh (၁ မိနစ်)</label>
+      <div class="menu">
+        <button class="btn" id="exportBtn" aria-haspopup="true"><i class="fa-solid fa-file-arrow-down"></i> Export CSV</button>
+        <div class="menu-list" id="exportMenu">
+          <button data-exp="users">အသုံးပြုသူများ (Users)</button>
+          <button data-exp="items">ပစ္စည်းများ (Demand / Supplier)</button>
+          <button data-exp="reports">Report များ</button>
+        </div>
+      </div>
+      <button class="btn primary" id="refreshBtn"><i class="fa-solid fa-rotate-right" id="refreshIcon"></i> Refresh</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="errBanner" class="banner"></div>
+  <div id="alerts" class="alerts"></div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="grid g-3-1">
+    <div class="card">
+      <h2><i class="fa-solid fa-chart-column" style="color:var(--supplier)"></i> နောက်ဆုံး ၇ ရက် လှုပ်ရှားမှု <small>ရက်အလိုက်</small></h2>
+      <div class="chart-box"><canvas id="activityChart"></canvas></div>
+      <p class="note">Demand ပစ္စည်းများသည် ၃ ရက်ပြည့်လျှင် အလိုအလျောက် ပျက်သွားသဖြင့် ရက်ကြာသော Demand အရေအတွက်သည် အမှန်ထက်နည်းနိုင်ပါသည်။</p>
+    </div>
+    <div class="card">
+      <h2><i class="fa-solid fa-chart-pie" style="color:var(--ok)"></i> Demand အခြေအနေ</h2>
+      <div class="chart-box"><canvas id="statusChart"></canvas></div>
+      <div class="legend" id="statusLegend"></div>
+    </div>
+  </section>
+
+  <section class="grid g-3-1">
+    <div class="card">
+      <h2><i class="fa-solid fa-location-dot" style="color:var(--brand)"></i> တိုင်း/ပြည်နယ်အလိုက် အသုံးပြုသူ</h2>
+      <div class="chart-box tall"><canvas id="regionChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2><i class="fa-solid fa-user-check" style="color:var(--ok)"></i> Profile ပြည့်စုံမှု</h2>
+      <div id="completeness"></div>
+      <h2 style="margin-top:22px"><i class="fa-solid fa-city" style="color:var(--warn)"></i> အသုံးပြုသူ အများဆုံးမြို့ <small>Top 5</small></h2>
+      <ul class="rank" id="topTowns"></ul>
+    </div>
+  </section>
+
+  <section class="grid g-3">
+    <div class="card">
+      <h2><i class="fa-solid fa-star" style="color:var(--warn)"></i> Star အများဆုံး</h2>
+      <ul class="rank" id="topStars"></ul>
+    </div>
+    <div class="card">
+      <h2><i class="fa-solid fa-user-group" style="color:var(--supplier)"></i> Follower အများဆုံး</h2>
+      <ul class="rank" id="topFollowed"></ul>
+    </div>
+    <div class="card">
+      <h2><i class="fa-solid fa-cart-shopping" style="color:var(--ok)"></i> Order အများဆုံးယူသော Supplier</h2>
+      <ul class="rank" id="topOrderers"></ul>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:12px" id="adCard">
+    <h2><i class="fa-solid fa-rectangle-ad" style="color:var(--brand)"></i> DS Net ကြော်ငြာ စီမံရန် <small id="adState"></small></h2>
+    <div class="setup" id="adSetup"><i class="fa-solid fa-triangle-exclamation"></i> ကြော်ငြာ table မတွေ့ပါ — <b>ads_setup.sql</b> ကို Supabase SQL Editor တွင် တစ်ကြိမ် run ပါ။</div>
+    <div class="ad-grid">
+      <div>
+        <label class="lbl">DS Net တွင် ပြသမည်လား</label>
+        <select id="adEnabled" class="inp"><option value="true">ဖွင့်မည်</option><option value="false">ပိတ်မည်</option></select>
+        <label class="lbl">ကြော်ငြာပုံ <span style="font-weight:400">(အကြံပြု ၁၂၀၀×၂၇၀ — အနံဘက်ကျယ်သောပုံ)</span></label>
+        <input type="file" id="adFile" accept="image/*" class="inp">
+        <button type="button" class="btn" id="adClearImg" style="margin-top:8px"><i class="fa-solid fa-trash"></i> ပုံဖယ်ရှားမည်</button>
+        <label class="lbl">ခေါင်းစဉ်</label>
+        <input id="adTitle" class="inp" maxlength="80" placeholder="ဥပမာ - အထူးပရိုမိုးရှင်း">
+        <label class="lbl">အကြောင်းအရာ</label>
+        <textarea id="adText" class="inp" maxlength="200" placeholder="ကြော်ငြာ အသေးစိတ်…"></textarea>
+        <label class="lbl">Link (နှိပ်လျှင် သွားမည့်နေရာ)</label>
+        <input id="adLink" class="inp" placeholder="https://t.me/yourlink">
+        <button class="btn primary" id="adSave" style="margin-top:14px"><i class="fa-solid fa-floppy-disk"></i> သိမ်းပြီး DS Net သို့ ပို့မည်</button>
+        <p class="note" id="adMsg"></p>
+      </div>
+      <div>
+        <label class="lbl" style="margin-top:0">DS Net တွင် ပေါ်မည့် ပုံစံ (Preview)</label>
+        <div class="ad-prev" id="adPrev"></div>
+        <p class="note">ပုံကို DS Net တွင် အနံအပြည့်၊ အမြင့် အနည်းငယ်သာ ပြသဖြင့် အပေါ်အောက် ဖြတ်ပြီး ပြနိုင်ပါသည်။</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <h2><i class="fa-solid fa-flag" style="color:var(--bad)"></i> စောင့်ဆိုင်းနေသော Report များ <small id="reportCount"></small></h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Report ခံရသူ</th><th>တင်သူ</th><th>အကြောင်းရင်း</th><th>အသေးစိတ်</th><th>အချိန်</th></tr></thead>
+        <tbody id="reportBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <h2><i class="fa-solid fa-clock-rotate-left" style="color:var(--muted)"></i> နောက်ဆုံးဝင်ရောက်လာသော ဒေတာများ</h2>
+    <div class="tools">
+      <div class="tabs" id="feedTabs">
+        <button class="on" data-f="all">အားလုံး</button>
+        <button data-f="shopRequests">Demand</button>
+        <button data-f="agentListings">Supplier</button>
+      </div>
+      <input class="search" id="feedSearch" type="search" placeholder="ပစ္စည်း / တင်သူ ရှာရန်…">
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>အမျိုးအစား</th><th>ပစ္စည်းအမည်</th><th>တင်သွင်းသူ</th><th>မြို့</th><th>အခြေအနေ</th><th>အချိန်</th></tr></thead>
+        <tbody id="feedBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+/* ================= SUPABASE ================= */
+const SUPABASE_URL = 'https://jscyvjndsirkwrexictr.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_9Zz7p0FaGQwOHkGWdMMung_Xc5wNycl';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const DAY = 86400000, HOUR = 3600000, DEMAND_LIFE_DAYS = 3;
+const REGIONS = {
+  'ရန်ကုန်တိုင်း': ['ရန်ကုန်မြို့','ဒဂုံမြို့','မရမ်းကုန်းမြို့','အင်းစိန်မြို့','သင်္ဃန်းကျွန်းမြို့','လှိုင်သာယာမြို့','သာကေတမြို့','ထန်လျင်မြို့','ဒလမြို့'],
+  'မွန်ပြည်နယ်': ['မော်လမြိုင်မြို့','ဘီးလင်းမြို့','ချောင်းဆုံမြို့','သထုံမြို့','ရေးမြို့','မုဒုံမြို့','ကျိုက်ထိုမြို့','သံဖြူဇရပ်မြို့','ပေါင်မြို့','ကျိုက်မရောမြို့'],
+  'မန္တလေးတိုင်း': ['မန္တလေးမြို့','ပြင်ဦးလွင်မြို့','မိတ္ထီလာမြို့','ကျောက်ဆည်မြို့','ပျော်ဘွယ်မြို့','ကျောက်ပန်းတောင်းမြို့','မြင်းခြံမြို့','မတ္တရာမြို့','ငါန်းဇွန်မြို့'],
+  'ပဲခူးတိုင်း': ['ပဲခူးမြို့','တောင်ငူမြို့','ပြည်မြို့','သာယာဝတီမြို့','ကျောက်တံခါးမြို့','ဖြူးမြို့','ဖြူမြို့','နတ်တလင်းမြို့','လေးပွဲကွင်းမြို့','ရွှေကျင်မြို့'],
+  'ကရင်ပြည်နယ်': ['ဘားအံမြို့','မြဝတီမြို့']
+};
+const townRegion = {};
+Object.entries(REGIONS).forEach(([r, ts]) => ts.forEach(t => townRegion[t] = r));
+const OTHER = 'အခြား';
+
+let D = null;          // loaded data
+let feedFilter = 'all';
+let charts = {};
+let timer = null;
+
+/* ================= HELPERS ================= */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => Number(n || 0).toLocaleString('en-US');
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const when = ts => { const t = Number(ts); return t ? new Date(t).toLocaleString('my-MM', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—'; };
+const regionOf = p => townRegion[p.town] || OTHER;
+
+async function fetchAll(table, cols) {
+  const size = 1000; let from = 0, out = [];
+  for (;;) {
+    const { data, error } = await db.from(table).select(cols).range(from, from + size - 1);
+    if (error) throw new Error(table + ': ' + error.message);
+    out = out.concat(data || []);
+    if (!data || data.length < size) break;
+    from += size;
+  }
+  return out;
+}
+
+/* ================= LOAD ================= */
+async function load() {
+  const btn = $('refreshBtn'), ic = $('refreshIcon');
+  btn.disabled = true; ic.classList.add('spin');
+  const jobs = {
+    // img (base64) ကို မဆွဲပါ — data ပေါ့ပါးစေရန်
+    items: fetchAll('items', 'id,key,name,item,timestamp,orderedBy'),
+    profiles: fetchAll('profiles', 'name,role,town,phone,avatar,bio'),
+    comments: fetchAll('comments', 'id,item_id,username,timestamp,reply_text'),
+    stars: fetchAll('stars', 'from_name,to_name'),
+    follows: fetchAll('follows', 'follower_name,following_name'),
+    reports: fetchAll('reports', 'reporter_name,target_name,reason,detail,timestamp,status'),
+    bans: fetchAll('bans', 'name')
+  };
+  const keys = Object.keys(jobs);
+  const res = await Promise.allSettled(keys.map(k => jobs[k]));
+  const data = {}, failed = [];
+  res.forEach((r, i) => { if (r.status === 'fulfilled') data[keys[i]] = r.value; else { data[keys[i]] = []; failed.push(r.reason.message); } });
+  D = data;
+
+  const eb = $('errBanner');
+  if (failed.length) { eb.className = 'banner err'; eb.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ဒေတာ အချို့ ဆွဲမရပါ — ' + failed.map(esc).join(' | '); }
+  else eb.className = 'banner';
+
+  if (failed.length === keys.length) { $('updated').textContent = 'ချိတ်ဆက်၍မရပါ'; }
+  else { $('updated').textContent = 'နောက်ဆုံး update: ' + new Date().toLocaleTimeString('my-MM', { hour:'2-digit', minute:'2-digit', second:'2-digit' }); render(); }
+  btn.disabled = false; ic.classList.remove('spin');
+}
+
+/* ================= RENDER ================= */
+function render() {
+  const now = Date.now();
+  const demands = D.items.filter(i => i.key === 'shopRequests');
+  const listings = D.items.filter(i => i.key === 'agentListings');
+  const ordered = demands.filter(i => i.orderedBy);
+  const waiting = demands.filter(i => !i.orderedBy);
+  const expiring = waiting.filter(i => { const left = DEMAND_LIFE_DAYS * DAY - (now - Number(i.timestamp)); return left > 0 && left <= 12 * HOUR; });
+  const shops = D.profiles.filter(p => p.role === 'shop').length;
+  const agents = D.profiles.filter(p => p.role === 'agent').length;
+  const replied = D.comments.filter(c => c.reply_text).length;
+  const openReports = D.reports.filter(r => (r.status || 'open') === 'open');
+
+  /* alerts */
+  const al = [];
+  if (expiring.length) al.push(`<span class="alert warn"><i class="fa-solid fa-hourglass-half"></i>နာရီ ၁၂ အတွင်း ကုန်ဆုံးမည့် Demand ${fmt(expiring.length)} ခု (Order မရသေး)</span>`);
+  if (openReports.length) al.push(`<span class="alert bad"><i class="fa-solid fa-flag"></i>စစ်ဆေးရန် Report ${fmt(openReports.length)} ခု</span>`);
+  if (!al.length) al.push(`<span class="alert ok"><i class="fa-solid fa-circle-check"></i>အရေးပေါ် သတိပေးချက် မရှိပါ</span>`);
+  $('alerts').innerHTML = al.join('');
+
+  /* KPIs */
+  const k = [
+    ['အသုံးပြုသူ စုစုပေါင်း', D.profiles.length, `Demand ${fmt(shops)} · Supplier ${fmt(agents)}`, 'fa-users', 'i-blue'],
+    ['လက်ရှိ Demand', demands.length, `စောင့်ဆိုင်းဆဲ ${fmt(waiting.length)}`, 'fa-clipboard-list', 'i-red'],
+    ['Order ပြီးမြောက်နှုန်း', pct(ordered.length, demands.length) + '%', `${fmt(ordered.length)} / ${fmt(demands.length)} Demand`, 'fa-cart-check', 'i-green'],
+    ['Supplier ပစ္စည်း', listings.length, `${fmt(new Set(listings.map(i => i.name)).size)} Supplier တင်ထား`, 'fa-truck-field', 'i-blue'],
+    ['Comment', D.comments.length, `Reply ပြန်နှုန်း ${pct(replied, D.comments.length)}%`, 'fa-comments', 'i-amber'],
+    ['Report / Ban', `${fmt(openReports.length)} / ${fmt(D.bans.length)}`, 'စောင့်ဆိုင်း / ပိတ်ပင်ထား', 'fa-shield-halved', 'i-gray']
+  ];
+  $('kpis').innerHTML = k.map(([l, v, s, ic, cls]) => `
+    <div class="kpi"><div class="lb"><i class="fa-solid ${ic} ${cls}"></i>${l}</div><div class="v">${typeof v === 'number' ? fmt(v) : v}</div><div class="s">${s}</div></div>`).join('');
+
+  renderActivity(now, demands, listings);
+  renderStatus(ordered.length, waiting.length - expiring.length, expiring.length);
+  renderRegions();
+  renderCompleteness();
+  renderRanks();
+  renderReports(openReports);
+  renderFeed();
+}
+
+function chartDefaults() {
+  Chart.defaults.font.family = "'Noto Sans Myanmar', system-ui, sans-serif";
+  Chart.defaults.font.size = 11;
+  Chart.defaults.color = css('--muted');
+  Chart.defaults.borderColor = css('--line');
+}
+function mk(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart($(id), cfg); }
+
+function renderActivity(now, demands, listings) {
+  chartDefaults();
+  const days = [];
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  for (let i = 6; i >= 0; i--) days.push(start.getTime() - i * DAY);
+  const bucket = arr => days.map(d => arr.filter(x => { const t = Number(x.timestamp); return t >= d && t < d + DAY; }).length);
+  const labels = days.map(d => new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short' }));
+  mk('activityChart', {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'Demand', data: bucket(demands), backgroundColor: css('--demand'), borderRadius: 5, maxBarThickness: 22 },
+      { label: 'Supplier ပစ္စည်း', data: bucket(listings), backgroundColor: css('--supplier'), borderRadius: 5, maxBarThickness: 22 },
+      { label: 'Comment', data: bucket(D.comments), backgroundColor: css('--warn'), borderRadius: 5, maxBarThickness: 22 }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 14 } } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: css('--line') } }, x: { grid: { display: false } } } }
+  });
+}
+
+function renderStatus(ordered, waiting, expiring) {
+  const vals = [ordered, waiting, expiring];
+  const cols = [css('--ok'), css('--warn'), css('--bad')];
+  const names = ['Order ပြီး', 'စောင့်ဆိုင်းဆဲ', 'မကြာမီ ကုန်ဆုံးမည်'];
+  const total = vals.reduce((a, b) => a + b, 0);
+  if (!total) { if (charts.statusChart) { charts.statusChart.destroy(); delete charts.statusChart; } $('statusLegend').innerHTML = '<p class="empty" style="width:100%">Demand မရှိသေးပါ</p>'; return; }
+  mk('statusChart', {
+    type: 'doughnut',
+    data: { labels: names, datasets: [{ data: vals, backgroundColor: cols, borderColor: css('--surface'), borderWidth: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { display: false } } }
+  });
+  $('statusLegend').innerHTML = names.map((n, i) => `<span style="--c:${cols[i]}">${n} <b>${fmt(vals[i])}</b></span>`).join('');
+}
+
+function renderRegions() {
+  const names = [...Object.keys(REGIONS), OTHER];
+  const shop = names.map(() => 0), agent = names.map(() => 0);
+  D.profiles.forEach(p => { const i = names.indexOf(regionOf(p)); if (p.role === 'shop') shop[i]++; else agent[i]++; });
+  mk('regionChart', {
+    type: 'bar',
+    data: { labels: names, datasets: [
+      { label: 'Demand', data: shop, backgroundColor: css('--demand'), borderRadius: 4 },
+      { label: 'Supplier', data: agent, backgroundColor: css('--supplier'), borderRadius: 4 }
+    ]},
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 14 } } },
+      scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, grid: { color: css('--line') } }, y: { stacked: true, grid: { display: false } } } }
+  });
+}
+
+function renderCompleteness() {
+  const n = D.profiles.length;
+  const rows = [
+    ['ဖုန်းနံပါတ် ထည့်ထားသူ', D.profiles.filter(p => (p.phone || '').trim()).length],
+    ['Profile ပုံ ထည့်ထားသူ', D.profiles.filter(p => (p.avatar || '').trim()).length],
+    ['Bio ရေးထားသူ', D.profiles.filter(p => (p.bio || '').trim() && p.bio.trim() !== 'မင်္ဂလာပါ၊ Google ဖြင့် ဝင်ရောက်ထားပါသည်။').length]
+  ];
+  $('completeness').innerHTML = n ? rows.map(([l, c]) => `
+    <div class="bar-row"><div class="t"><span>${l}</span><b>${pct(c, n)}%</b></div><div class="bar"><i style="width:${pct(c, n)}%"></i></div></div>`).join('')
+    : '<p class="empty">အသုံးပြုသူ မရှိသေးပါ</p>';
+
+  const towns = {};
+  D.profiles.forEach(p => { if (p.town) towns[p.town] = (towns[p.town] || 0) + 1; });
+  list('topTowns', Object.entries(towns).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([t, c]) => ({ name: t, sub: townRegion[t] || OTHER, val: c })));
+}
+
+function list(id, rows, unit = '') {
+  $(id).innerHTML = rows.length ? rows.map((r, i) => `
+    <li><span class="n">${i + 1}</span><span class="nm">${esc(r.name)}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span><span class="val">${fmt(r.val)}${unit}</span></li>`).join('')
+    : '<li class="empty" style="display:block">ဒေတာ မရှိသေးပါ</li>';
+}
+function topBy(arr, keyFn, n = 5) {
+  const m = {}; arr.forEach(x => { const k = keyFn(x); if (k) m[k] = (m[k] || 0) + 1; });
+  return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+function renderRanks() {
+  const role = Object.fromEntries(D.profiles.map(p => [p.name, p.role === 'shop' ? 'Demand' : 'Supplier']));
+  list('topStars', topBy(D.stars, s => s.to_name).map(([n, c]) => ({ name: n, sub: role[n], val: c })), ' ⭐');
+  list('topFollowed', topBy(D.follows, f => f.following_name).map(([n, c]) => ({ name: n, sub: role[n], val: c })));
+  list('topOrderers', topBy(D.items.filter(i => i.orderedBy), i => i.orderedBy).map(([n, c]) => ({ name: n, sub: role[n], val: c })), ' order');
+}
+
+function renderReports(open) {
+  $('reportCount').textContent = open.length ? open.length + ' ခု' : '';
+  $('reportBody').innerHTML = open.length
+    ? open.sort((a, b) => Number(b.timestamp) - Number(a.timestamp)).slice(0, 15).map(r => `
+      <tr><td><b>${esc(r.target_name)}</b></td><td>${esc(r.reporter_name)}</td><td><span class="pill p-red">${esc(r.reason || '—')}</span></td>
+      <td class="muted">${esc(r.detail || '—')}</td><td class="nowrap muted">${when(r.timestamp)}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">စောင့်ဆိုင်းနေသော Report မရှိပါ 🎉</td></tr>';
+}
+
+function renderFeed() {
+  const now = Date.now(), q = $('feedSearch').value.trim().toLowerCase();
+  const town = Object.fromEntries(D.profiles.map(p => [p.name, p.town]));
+  const rows = D.items
+    .filter(i => feedFilter === 'all' || i.key === feedFilter)
+    .filter(i => !q || (i.item || '').toLowerCase().includes(q) || (i.name || '').toLowerCase().includes(q))
+    .sort((a, b) => Number(b.timestamp) - Number(a.timestamp)).slice(0, 15);
+  $('feedBody').innerHTML = rows.length ? rows.map(i => {
+    const demand = i.key === 'shopRequests';
+    let st = '<span class="pill p-blue">တင်ထား</span>';
+    if (demand) {
+      if (i.orderedBy) st = `<span class="pill p-green">မှာပြီး · ${esc(i.orderedBy)}</span>`;
+      else {
+        const hrs = Math.max(0, Math.round((DEMAND_LIFE_DAYS * DAY - (now - Number(i.timestamp))) / HOUR));
+        st = `<span class="pill ${hrs <= 12 ? 'p-red' : 'p-amber'}">စောင့်ဆိုင်းဆဲ · ${hrs} နာရီကျန်</span>`;
+      }
+    }
+    return `<tr><td><span class="pill ${demand ? 'p-red' : 'p-blue'}">${demand ? 'Demand' : 'Supplier'}</span></td>
+      <td><b>${esc(i.item)}</b></td><td>${esc(i.name)}</td><td class="muted">${esc(town[i.name] || '—')}</td><td>${st}</td><td class="nowrap muted">${when(i.timestamp)}</td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty">ဒေတာ မရှိပါ</td></tr>';
+}
+
+/* ================= AD MANAGER ================= */
+let AD = { enabled:false, image:'', title:'', text:'', link:'' };
+let pendingImg = null, me = null;
+const safeLink = u => /^(https?:|tel:)/i.test(u || '') ? u : '';
+
+function compress(file, max = 1200, q = .78) {
+  return new Promise((ok, no) => {
+    const r = new FileReader(); r.onerror = no;
+    r.onload = () => { const im = new Image(); im.onerror = () => ok(r.result);
+      im.onload = () => { const k = Math.min(1, max / im.width), c = document.createElement('canvas');
+        c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', q)); };
+      im.src = r.result; };
+    r.readAsDataURL(file);
+  });
+}
+function adPreview() {
+  const img = pendingImg !== null ? pendingImg : AD.image;
+  const t = $('adTitle').value, x = $('adText').value;
+  $('adPrev').innerHTML = (img ? `<img src="${esc(img)}" alt="">` : '<div class="ph"><i class="fa-solid fa-image"></i>&nbsp;ပုံမရှိသေးပါ</div>')
+    + `<div class="tx"><b>${esc(t) || 'ခေါင်းစဉ်'}</b><span>${esc(x) || 'ကြော်ငြာ အကြောင်းအရာ'}</span></div><span class="tag">ကြော်ငြာ</span>`;
+  $('adPrev').style.opacity = $('adEnabled').value === 'true' ? 1 : .45;
+}
+function fillAdForm() {
+  $('adEnabled').value = AD.enabled ? 'true' : 'false';
+  $('adTitle').value = AD.title || ''; $('adText').value = AD.text || ''; $('adLink').value = AD.link || '';
+  $('adFile').value = ''; pendingImg = null; adPreview();
+  $('adState').textContent = AD.enabled ? '● ပြသနေသည်' : '○ ပိတ်ထားသည်';
+}
+async function loadAd() {
+  const { data, error } = await db.from('ad_config').select('*').eq('id', 1).maybeSingle();
+  $('adSetup').style.display = error ? 'block' : 'none';
+  if (!error && data) AD = { enabled: !!data.enabled, image: data.image || '', title: data.title || '', text: data.text || '', link: data.link || '' };
+  fillAdForm();
+}
+async function saveAd() {
+  const msg = $('adMsg'); msg.style.color = 'var(--muted)';
+  if (!me) { msg.style.color = 'var(--bad)'; msg.textContent = 'ကြော်ငြာ သိမ်းရန် Admin Login အရင်ဝင်ပါ။'; return; }
+  const link = $('adLink').value.trim();
+  if (link && !safeLink(link)) { msg.style.color = 'var(--bad)'; msg.textContent = 'Link သည် https:// ဖြင့် စရပါမည်။'; return; }
+  const row = { id: 1, enabled: $('adEnabled').value === 'true', image: pendingImg !== null ? pendingImg : AD.image,
+    title: $('adTitle').value.trim(), text: $('adText').value.trim(), link, updated_at: Date.now() };
+  $('adSave').disabled = true; msg.textContent = 'သိမ်းနေပါသည်…';
+  const { error } = await db.from('ad_config').upsert([row]);
+  $('adSave').disabled = false;
+  if (error) { msg.style.color = 'var(--bad)'; msg.textContent = 'သိမ်း၍မရပါ: ' + error.message + ' (Admin စာရင်းထဲ ရှိမရှိ စစ်ပါ)'; return; }
+  AD = row; fillAdForm(); msg.style.color = 'var(--ok)'; msg.textContent = 'သိမ်းပြီးပါပြီ — DS Net သည် နောက် refresh တွင် ပြောင်းပါမည်။';
+}
+$('adFile').onchange = async e => { const f = e.target.files[0]; pendingImg = f ? await compress(f) : null; adPreview(); };
+$('adClearImg').onclick = () => { pendingImg = ''; $('adFile').value = ''; adPreview(); };
+['adTitle', 'adText'].forEach(i => $(i).oninput = adPreview);
+$('adEnabled').onchange = adPreview;
+$('adSave').onclick = saveAd;
+
+/* Admin login (Google) */
+function showWho() {
+  $('whoAmI').textContent = me ? me.email : '';
+  $('authBtn').innerHTML = me ? '<i class="fa-solid fa-right-from-bracket"></i> Logout' : '<i class="fa-brands fa-google"></i> Admin Login';
+}
+$('authBtn').onclick = async () => {
+  if (me) { await db.auth.signOut(); return; }
+  const { error } = await db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
+  if (error) { $('adMsg').style.color = 'var(--bad)'; $('adMsg').textContent = 'Login မရပါ: ' + error.message; }
+};
+db.auth.getSession().then(({ data }) => { me = data.session ? data.session.user : null; showWho(); });
+db.auth.onAuthStateChange((_e, session) => { me = session ? session.user : null; showWho(); });
+
+/* ================= EXPORT ================= */
+function csv(rows, cols) {
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  return '﻿' + [cols.map(q).join(',')].concat(rows.map(r => cols.map(c => q(r[c])).join(','))).join('\r\n');
+}
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  a.download = name + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function exportData(kind) {
+  if (!D) return;
+  if (kind === 'users') download('ds-net-users', csv(D.profiles.map(p => ({ ...p, region: regionOf(p) })), ['name', 'role', 'region', 'town', 'phone']));
+  if (kind === 'items') download('ds-net-items', csv(D.items.map(i => ({ ...i, time: new Date(Number(i.timestamp)).toISOString() })), ['key', 'item', 'name', 'orderedBy', 'time']));
+  if (kind === 'reports') download('ds-net-reports', csv(D.reports.map(r => ({ ...r, time: new Date(Number(r.timestamp)).toISOString() })), ['target_name', 'reporter_name', 'reason', 'detail', 'status', 'time']));
+}
+
+/* ================= EVENTS ================= */
+$('refreshBtn').onclick = load;
+$('exportBtn').onclick = e => { e.stopPropagation(); $('exportMenu').classList.toggle('open'); };
+document.addEventListener('click', () => $('exportMenu').classList.remove('open'));
+$('exportMenu').onclick = e => { const b = e.target.closest('button'); if (b) exportData(b.dataset.exp); };
+$('feedTabs').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  feedFilter = b.dataset.f;
+  document.querySelectorAll('#feedTabs button').forEach(x => x.classList.toggle('on', x === b));
+  if (D) renderFeed();
+};
+$('feedSearch').oninput = () => { if (D) renderFeed(); };
+$('autoRefresh').onchange = e => {
+  clearInterval(timer);
+  if (e.target.checked) timer = setInterval(load, 60000);
+};
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (D) render(); });
+
+$('kpis').innerHTML = Array(6).fill('<div class="kpi"><div class="lb sk">loading</div><div class="v sk" style="width:60%">0</div></div>').join('');
+load();
+loadAd();
+</script>
+</body>
+</html>
